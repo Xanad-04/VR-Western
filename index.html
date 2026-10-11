@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>VR Western Schießspiel - 10 Level Kampagne</title>
+  <meta name="description" content="Browser-VR Western-Schießspiel mit 10 aufeinanderfolgenden Levels, 360-Grad-Zielen, WebXR und Web Audio Synthesizer." />
+
+  <!-- A-Frame WebXR Framework -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      background: #111;
+    }
+
+    #hud-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-sizing: border-box;
+      padding: 16px;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .badge-card {
+      background: rgba(26, 14, 6, 0.52);
+      border: 1.5px solid rgba(194, 139, 73, 0.7);
+      border-radius: 8px;
+      padding: 9px 16px;
+      color: #f7e6c4;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .badge-title {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #dfaa66;
+      margin-bottom: 2px;
+      font-weight: 700;
+    }
+
+    .badge-value {
+      font-size: 24px;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .western-btn {
+      background: linear-gradient(180deg, #d4954a 0%, #8a4e1d 100%);
+      color: #fff;
+      border: 2px solid #f2c78f;
+      border-radius: 6px;
+      padding: 9px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      cursor: pointer;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .western-btn:hover {
+      background: linear-gradient(180deg, #e5a85d 0%, #9c5923 100%);
+      transform: translateY(-1px);
+    }
+
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 28px;
+      height: 28px;
+      pointer-events: none;
+      z-index: 99;
+      opacity: 0.85;
+    }
+
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: rgba(255, 235, 180, 0.9);
+      box-shadow: 0 0 4px #000;
+    }
+
+    #crosshair::before { top: 13px; left: 0; width: 28px; height: 2px; }
+    #crosshair::after { top: 0; left: 13px; width: 2px; height: 28px; }
+
+    .center-circle {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 8px;
+      height: 8px;
+      border: 1.5px solid rgba(255, 235, 180, 0.9);
+      border-radius: 50%;
+      box-sizing: border-box;
+    }
+
+    #hit-feedback {
+      position: absolute;
+      top: 36%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.7);
+      opacity: 0;
+      color: #39ff14;
+      font-size: 36px;
+      font-weight: 900;
+      text-shadow: 0 0 16px rgba(57, 255, 20, 0.9), 0 2px 4px #000;
+      pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 101;
+      letter-spacing: 2px;
+      text-align: center;
+    }
+
+    #hit-feedback .dist-tag {
+      display: block;
+      font-size: 19px;
+      color: #ffd88a;
+      letter-spacing: 1px;
+      margin-top: 4px;
+    }
+
+    #hit-feedback.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+
+    .instructions-card {
+      background: rgba(20, 12, 6, 0.88);
+      border: 1px solid #9c6e3b;
+      border-radius: 6px;
+      padding: 8px 18px;
+      color: #e6ceb0;
+      font-size: 13px;
+      text-align: center;
+      max-width: 700px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+  </style>
+
+  <script>
+    /* =====================================================================
+       PROGRESSION-DATEN: DIE 10 LEVEL STRUKTUR
+       ===================================================================== */
+    const LEVELS = [
+      {
+        level: 1,
+        name: "Tutorial: Erste Schritte",
+        description: "3 Ziele nebeneinander auf gleicher Höhe direkt vor dir",
+        targets: [
+          { x: -3.2, y: 1.6, z: -11.0, scale: 1.0 },
+          { x: 0.0, y: 1.6, z: -11.0, scale: 1.0 },
+          { x: 3.2, y: 1.6, z: -11.0, scale: 1.0 }
+        ]
+      },
+      {
+        level: 2,
+        name: "Horizontale Staffelung",
+        description: "4 Ziele weit versetzt nach links & rechts (180° Weitblick)",
+        targets: [
+          { x: -8.0, y: 1.6, z: -8.5, scale: 1.0 },
+          { x: -3.2, y: 1.6, z: -12.0, scale: 1.0 },
+          { x: 3.2, y: 1.6, z: -12.0, scale: 1.0 },
+          { x: 8.0, y: 1.6, z: -8.5, scale: 1.0 }
+        ]
+      },
+      {
+        level: 3,
+        name: "Tiefenstaffelung",
+        description: "4 Ziele auf verschiedenen Distanzen (nah bis weit hinten)",
+        targets: [
+          { x: -2.0, y: 1.5, z: -6.5, scale: 1.0 },
+          { x: -4.5, y: 1.7, z: -13.0, scale: 1.0 },
+          { x: 3.8, y: 1.8, z: -15.5, scale: 1.0 },
+          { x: 0.8, y: 2.2, z: -25.0, scale: 1.0 }
+        ]
+      },
+      {
+        level: 4,
+        name: "Höhenunterschiede",
+        description: "5 Ziele auf unterschiedlichen Höhen (Boden bis hoch in der Luft)",
+        targets: [
+          { x: -4.0, y: 0.9, z: -10.0, scale: 1.0 },
+          { x: -1.8, y: 2.8, z: -12.0, scale: 1.0 },
+          { x: 0.5, y: 4.2, z: -14.0, scale: 1.0 },
+          { x: 2.8, y: 1.1, z: -11.0, scale: 1.0 },
+          { x: 5.2, y: 3.6, z: -13.0, scale: 1.0 }
+        ]
+      },
+      {
+        level: 5,
+        name: "Kombination Distanz & Höhe",
+        description: "5 Ziele im gesamten 3D-Raum verteilt (nah/weit/hoch/tief)",
+        targets: [
+          { x: -5.0, y: 3.5, z: -8.0, scale: 1.0 },
+          { x: -2.5, y: 0.8, z: -14.0, scale: 1.0 },
+          { x: 0.0, y: 4.5, z: -22.0, scale: 1.0 },
+          { x: 3.0, y: 2.2, z: -9.5, scale: 1.0 },
+          { x: 6.0, y: 1.1, z: -19.0, scale: 1.0 }
+        ]
+      },
+      {
+        level: 6,
+        name: "360° Drehung - Einführung",
+        description: "4 Ziele im Kreis um dich (vorne, links, rechts & HINTER dir!)",
+        targets: [
+          { x: 0.0, y: 1.7, z: -12.0, scale: 1.0 },
+          { x: -12.0, y: 1.7, z: 0.0, scale: 1.0 },
+          { x: 12.0, y: 1.7, z: 0.0, scale: 1.0 },
+          { x: 0.0, y: 1.7, z: 12.0, scale: 1.0 }
+        ]
+      },
+      {
+        level: 7,
+        name: "360° Dynamik & Distanz",
+        description: "6 Ziele rundherum auf unterschiedlichen Distanzen",
+        targets: [
+          { x: 0.0, y: 1.8, z: -16.0, scale: 1.0 },
+          { x: -6.5, y: 1.5, z: -7.5, scale: 1.0 },
+          { x: -14.0, y: 2.0, z: 4.0, scale: 1.0 },
+          { x: -1.5, y: 1.6, z: 10.0, scale: 1.0 },
+          { x: 8.5, y: 1.7, z: 7.0, scale: 1.0 },
+          { x: 11.0, y: 2.1, z: -8.0, scale: 1.0 }
+        ]
+      },
+      {
+        level: 8,
+        name: "Chaos im 360°-Raum",
+        description: "6 Ziele in allen Winkeln (auch hoch schwebend & im Rücken)",
+        targets: [
+          { x: -2.0, y: 4.0, z: -11.0, scale: 1.0 },
+          { x: 7.5, y: 1.0, z: -10.0, scale: 1.0 },
+          { x: 10.0, y: 3.8, z: 2.0, scale: 1.0 },
+          { x: 2.5, y: 4.5, z: 11.0, scale: 1.0 },
+          { x: -4.0, y: 1.2, z: 9.0, scale: 1.0 },
+          { x: -9.0, y: 3.2, z: -3.0, scale: 1.0 }
+        ]
+      },
+      {
+        level: 9,
+        name: "Präzisions-Schuss (Halbierte Ziele)",
+        description: "6 kleine Ziele im 360°-Raum (Präzision gefordert!)",
+        targets: [
+          { x: 0.0, y: 2.0, z: -13.0, scale: 0.5 },
+          { x: -9.0, y: 1.5, z: -7.0, scale: 0.5 },
+          { x: -8.0, y: 2.5, z: 8.0, scale: 0.5 },
+          { x: 1.5, y: 1.8, z: 12.0, scale: 0.5 },
+          { x: 9.5, y: 3.0, z: 6.0, scale: 0.5 },
+          { x: 10.0, y: 1.4, z: -6.0, scale: 0.5 }
+        ]
+      },
+      {
+        level: 10,
+        name: "Master Trial (Das Finale)",
+        description: "8 Ziele im 360°-Raum – extreme Höhen, Tiefen & Winkel!",
+        targets: [
+          { x: 0.0, y: 1.1, z: -7.0, scale: 0.7 },
+          { x: -4.0, y: 4.8, z: -16.0, scale: 0.6 },
+          { x: 5.5, y: 2.2, z: -20.0, scale: 0.6 },
+          { x: -13.0, y: 3.2, z: -1.0, scale: 0.7 },
+          { x: -8.5, y: 1.0, z: 9.0, scale: 0.7 },
+          { x: 0.0, y: 4.5, z: 14.0, scale: 0.6 },
+          { x: 7.0, y: 1.4, z: 11.0, scale: 0.7 },
+          { x: 12.0, y: 4.0, z: 0.0, scale: 0.6 }
+        ]
+      }
+    ];
+  </script>
+
+  <script>
+    /* =====================================================================
+       WEB AUDIO API SYNTHESIZER
+       ===================================================================== */
+    class WesternAudioSynthesizer {
+      constructor() {
+        this.ctx = null;
+        this.masterGain = null;
+        this.isMuted = false;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContextClass();
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.setValueAtTime(0.7, this.ctx.currentTime);
+          this.masterGain.connect(this.ctx.destination);
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      toggleMute() {
+        this.isMuted = !this.isMuted;
+        if (this.masterGain && this.ctx) {
+          this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : 0.7, this.ctx.currentTime);
+        }
+        return this.isMuted;
+      }
+
+      playGunshot() {
+        this.init();
+        if (this.isMuted || !this.ctx) return;
+        const now = this.ctx.currentTime;
+
+        const punchOsc = this.ctx.createOscillator();
+        const punchGain = this.ctx.createGain();
+        punchOsc.type = 'triangle';
+        punchOsc.frequency.setValueAtTime(180, now);
+        punchOsc.frequency.exponentialRampToValueAtTime(32, now + 0.16);
+        punchGain.gain.setValueAtTime(0.9, now);
+        punchGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+        punchOsc.connect(punchGain);
+        punchGain.connect(this.masterGain);
+        punchOsc.start(now);
+        punchOsc.stop(now + 0.25);
+
+        const bufferSize = Math.floor(this.ctx.sampleRate * 0.35);
+        const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+
+        const whiteNoise = this.ctx.createBufferSource();
+        whiteNoise.buffer = noiseBuffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(3200, now);
+        filter.frequency.exponentialRampToValueAtTime(350, now + 0.28);
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(1.0, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+        whiteNoise.connect(filter);
+        filter.connect(noiseGain);
+        noiseGain.connect(this.masterGain);
+        whiteNoise.start(now);
+      }
+
+      playGongHit(distance = 12) {
+        this.init();
+        if (this.isMuted || !this.ctx) return;
+        const soundDelay = Math.min(0.08, (distance || 12) / 340);
+        const now = this.ctx.currentTime + soundDelay;
+        const freqs = [784, 1175, 1568, 2217, 3136];
+
+        freqs.forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+          osc.frequency.setValueAtTime(freq + (idx * 3.5), now);
+          const initialVol = 0.45 / (idx * 0.7 + 1);
+          gain.gain.setValueAtTime(initialVol, now);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.6 * (1 - idx * 0.12));
+          osc.connect(gain);
+          gain.connect(this.masterGain);
+          osc.start(now);
+          osc.stop(now + 1.6);
+        });
+      }
+
+      playBuzzer(isHigh = false) {
+        this.init();
+        if (this.isMuted || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = isHigh ? 'sawtooth' : 'sine';
+        const freq = isHigh ? 1320 : 660;
+        const dur = isHigh ? 0.35 : 0.14;
+        osc.frequency.setValueAtTime(freq, now);
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(now);
+        osc.stop(now + dur + 0.05);
+      }
+
+      playLevelComplete() {
+        this.init();
+        if (this.isMuted || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        [523.25, 659.25, 783.99].forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const startTime = now + idx * 0.12;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, startTime);
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.setValueAtTime(0.45, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.65);
+          osc.connect(gain);
+          gain.connect(this.masterGain);
+          osc.start(startTime);
+          osc.stop(startTime + 0.7);
+        });
+      }
+
+      playVictory() {
+        this.init();
+        if (this.isMuted || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        [392.00, 523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const startTime = now + idx * 0.14;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, startTime);
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.setValueAtTime(0.45, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.6);
+          osc.connect(gain);
+          gain.connect(this.masterGain);
+          osc.start(startTime);
+          osc.stop(startTime + 1.8);
+        });
+      }
+    }
+
+    window.soundFX = new WesternAudioSynthesizer();
+  </script>
+
+  <script>
+    /* =====================================================================
+       A-FRAME CUSTOM COMPONENTS
+       ===================================================================== */
+    AFRAME.registerComponent('gong-target', {
+      schema: {
+        id: { type: 'int', default: 0 },
+        hit: { type: 'boolean', default: false },
+        distance: { type: 'number', default: 12 }
+      },
+
+      init: function () {
+        this.el.classList.add('shootable');
+        this.originalScale = { x: 1, y: 1, z: 1 };
+        this.onHit = this.onHit.bind(this);
+        this.el.addEventListener('hit-target', this.onHit);
+        this.el.addEventListener('click', this.onHit);
+      },
+
+      onHit: function () {
+        if (this.data.hit) return;
+        const gameManager = document.querySelector('[western-game-manager]').components['western-game-manager'];
+        if (!gameManager || gameManager.state !== 'RUNNING') return;
+
+        this.data.hit = true;
+        window.soundFX.playGongHit(this.data.distance);
+
+        const disc = this.el.querySelector('.gong-plate');
+        if (disc) disc.setAttribute('material', 'color', '#00ff66; emissive: #00ff66; emissiveIntensity: 0.9');
+
+        const sparks = this.el.querySelector('.hit-sparks');
+        if (sparks) {
+          sparks.setAttribute('visible', 'true');
+          sparks.setAttribute('animation__expand', { property: 'scale', to: '2.4 2.4 2.4', dur: 350, easing: 'easeOutQuad' });
+          sparks.setAttribute('animation__fade', { property: 'material.opacity', to: '0', dur: 350, easing: 'easeOutQuad' });
+        }
+
+        const curRot = this.el.getAttribute('rotation') || { x: 0, y: 0, z: 0 };
+        this.el.setAttribute('animation__swing', {
+          property: 'rotation',
+          to: `${curRot.x - 36} ${curRot.y} ${curRot.z}`,
+          dur: 150,
+          dir: 'alternate',
+          loop: 2
+        });
+
+        setTimeout(() => {
+          this.el.setAttribute('animation__disappear', { property: 'scale', to: '0 0 0', dur: 280, easing: 'easeInBack' });
+          setTimeout(() => this.el.setAttribute('visible', 'false'), 300);
+        }, 380);
+
+        gameManager.targetHit(this.data.id, this.data.distance);
+      },
+
+      setupTarget: function (data, id) {
+        this.data.hit = false;
+        this.data.id = id;
+        this.el.setAttribute('position', `${data.x} ${data.y} ${data.z}`);
+
+        const dist = Math.round(Math.hypot(data.x, data.z, (data.y || 1.6) - 1.6));
+        this.data.distance = dist;
+
+        // Automatische 360°-Ausrichtung zum Spieler (0, 1.6, 0)
+        const angleY = Math.atan2(data.x, data.z) * (180 / Math.PI);
+        this.el.setAttribute('rotation', `0 ${angleY} 0`);
+
+        const groundStand = this.el.querySelector('.ground-stand');
+        const aerialMount = this.el.querySelector('.aerial-mount');
+        if (data.y > 2.2) {
+          if (groundStand) groundStand.setAttribute('visible', 'false');
+          if (aerialMount) aerialMount.setAttribute('visible', 'true');
+        } else {
+          if (groundStand) groundStand.setAttribute('visible', 'true');
+          if (aerialMount) aerialMount.setAttribute('visible', 'false');
+        }
+
+        const distLabel = this.el.querySelector('.distance-text');
+        if (distLabel) distLabel.setAttribute('value', `${dist}m`);
+
+        const disc = this.el.querySelector('.gong-plate');
+        if (disc) disc.setAttribute('material', 'color', '#9da8b3; emissive: #000; emissiveIntensity: 0; metalness: 0.85; roughness: 0.3');
+
+        const sparks = this.el.querySelector('.hit-sparks');
+        if (sparks) {
+          sparks.setAttribute('visible', 'false');
+          sparks.removeAttribute('animation__expand');
+          sparks.removeAttribute('animation__fade');
+          sparks.setAttribute('scale', '0.4 0.4 0.4');
+          sparks.setAttribute('material', 'opacity', '0.9');
+        }
+
+        this.el.removeAttribute('animation__swing');
+        this.el.removeAttribute('animation__disappear');
+        this.el.removeAttribute('animation__spawn');
+        this.el.setAttribute('visible', 'true');
+
+        const s = data.scale || 1.0;
+        this.originalScale = { x: s, y: s, z: s };
+        this.el.setAttribute('scale', '0.01 0.01 0.01');
+        this.el.setAttribute('animation__spawn', {
+          property: 'scale',
+          from: '0.01 0.01 0.01',
+          to: `${s} ${s} ${s}`,
+          dur: 420,
+          easing: 'easeOutBack'
+        });
+      }
+    });
+
+    AFRAME.registerComponent('western-gun-controller', {
+      schema: { isVRController: { type: 'boolean', default: false } },
+      init: function () {
+        this.muzzleFlash = this.el.querySelector('.muzzle-flash');
+        this.revolverModel = this.el.querySelector('.gun-mesh') || this.el;
+        this.fire = this.fire.bind(this);
+
+        this.el.addEventListener('triggerdown', this.fire);
+        this.el.addEventListener('selectstart', this.fire);
+
+        if (!this.data.isVRController) {
+          window.addEventListener('mousedown', (e) => {
+            if (e.target.closest('#hud-overlay') && !e.target.closest('a-scene')) return;
+            this.fire();
+          });
+        }
+      },
+      fire: function () {
+        window.soundFX.init();
+        window.soundFX.playGunshot();
+
+        if (this.muzzleFlash) {
+          this.muzzleFlash.setAttribute('visible', 'true');
+          setTimeout(() => this.muzzleFlash.setAttribute('visible', 'false'), 60);
+        }
+
+        if (this.revolverModel) {
+          const cur = this.revolverModel.getAttribute('rotation') || { x: 0, y: 0, z: 0 };
+          this.revolverModel.setAttribute('animation__recoil', {
+            property: 'rotation',
+            to: `${cur.x - 18} ${cur.y} ${cur.z}`,
+            dur: 50,
+            dir: 'alternate',
+            loop: 1
+          });
+        }
+
+        let hitTarget = null;
+        if (this.data.isVRController) {
+          const ray = this.el.components['raycaster'];
+          if (ray && ray.intersectedEls && ray.intersectedEls.length > 0) hitTarget = ray.intersectedEls[0];
+        } else {
+          const cursor = document.querySelector('#camera-cursor');
+          if (cursor && cursor.components['raycaster']) {
+            const hits = cursor.components['raycaster'].intersectedEls;
+            if (hits && hits.length > 0) hitTarget = hits[0];
+          }
+        }
+
+        if (hitTarget) {
+          const targetEl = hitTarget.closest('[gong-target]');
+          if (targetEl) targetEl.emit('hit-target');
+        }
+      }
+    });
+
+    AFRAME.registerComponent('western-game-manager', {
+      init: function () {
+        this.state = 'WAITING';
+        this.currentLevelIndex = 0;
+        this.totalLevels = LEVELS.length;
+        this.matchStartTime = 0;
+        this.totalElapsedTime = 0;
+        this.targetsRemaining = 0;
+
+        this.boardStatusText = document.querySelector('#board-status-text');
+        this.boardTimerText = document.querySelector('#board-timer-text');
+        this.boardSubText = document.querySelector('#board-sub-text');
+
+        this.uiLevel = document.getElementById('ui-level');
+        this.uiTimer = document.getElementById('ui-timer');
+        this.uiTargets = document.getElementById('ui-targets');
+        this.uiMission = document.getElementById('ui-mission');
+
+        this.createTargetPool();
+        this.startCampaignCountdown();
+      },
+
+      createTargetPool: function () {
+        const container = document.querySelector('#targets-container');
+        if (!container || container.children.length > 0) return;
+
+        for (let i = 0; i < 8; i++) {
+          const targetEl = document.createElement('a-entity');
+          targetEl.id = `target-${i}`;
+          targetEl.setAttribute('gong-target', `id: ${i}; distance: 12`);
+          targetEl.setAttribute('visible', 'false');
+
+          targetEl.innerHTML = `
+            <a-entity class="ground-stand">
+              <a-cylinder position="-0.85 -0.8 0" rotation="0 0 -14" radius="0.04" height="2.2" color="#523518"></a-cylinder>
+              <a-cylinder position="0.85 -0.8 0" rotation="0 0 14" radius="0.04" height="2.2" color="#523518"></a-cylinder>
+              <a-cylinder position="0 0.45 0" rotation="0 0 90" radius="0.05" height="1.8" color="#422912"></a-cylinder>
+            </a-entity>
+            <a-entity class="aerial-mount" visible="false">
+              <a-box position="0 0.8 0" width="1.6" height="0.08" depth="0.08" color="#3d2613"></a-box>
+              <a-cylinder position="-0.45 0.4 0" radius="0.012" height="0.8" color="#222"></a-cylinder>
+              <a-cylinder position="0.45 0.4 0" radius="0.012" height="0.8" color="#222"></a-cylinder>
+            </a-entity>
+            <a-cylinder position="-0.35 0.28 0" radius="0.014" height="0.6" color="#222"></a-cylinder>
+            <a-cylinder position="0.35 0.28 0" radius="0.014" height="0.6" color="#222"></a-cylinder>
+            <a-cylinder class="gong-plate shootable" position="0 0 0" rotation="90 0 0" radius="0.65" height="0.06" color="#9da8b3" material="metalness: 0.85; roughness: 0.28">
+              <a-cylinder position="0 0.035 0" radius="0.22" height="0.02" color="#c92a2a"></a-cylinder>
+              <a-ring position="0 0.034 0" radius-inner="0.42" radius-outer="0.48" color="#d94b4b"></a-ring>
+            </a-cylinder>
+            <a-ring class="hit-sparks" visible="false" position="0 0 0.08" radius-inner="0.6" radius-outer="0.85" color="#39ff14" material="emissive: #39ff14; opacity: 0.9"></a-ring>
+            <a-entity class="distance-badge" position="0 -0.52 0">
+              <a-box width="0.82" height="0.25" depth="0.05" color="#3d2613"></a-box>
+              <a-text class="distance-text" value="12m" align="center" position="0 0 0.035" width="3.2" color="#ffd88a"></a-text>
+            </a-entity>
+          `;
+          container.appendChild(targetEl);
+        }
+      },
+
+      startCampaignCountdown: function () {
+        this.state = 'COUNTDOWN';
+        this.currentLevelIndex = 0;
+        this.totalElapsedTime = 0;
+
+        const levelData = LEVELS[0];
+        this.update3DBoard('BEREIT MACHEN...', '00.00s', `STARTET IN 2S: ${levelData.name}`);
+        this.updateHUD('1 / 10', '00.00s', `${levelData.targets.length} / ${levelData.targets.length}`, levelData.name);
+
+        let remaining = 2;
+        const countdownTimer = setInterval(() => {
+          remaining--;
+          if (remaining > 0) {
+            window.soundFX.playBuzzer(false);
+            this.update3DBoard('ACHTUNG...', '00.00s', `START IN ${remaining}S`);
+          } else {
+            clearInterval(countdownTimer);
+            this.beginCampaign();
+          }
+        }, 1000);
+        setTimeout(() => window.soundFX.playBuzzer(false), 450);
+      },
+
+      beginCampaign: function () {
+        this.matchStartTime = performance.now();
+        this.loadLevel(0);
+        this.state = 'RUNNING';
+        window.soundFX.playBuzzer(true);
+      },
+
+      loadLevel: function (index) {
+        this.currentLevelIndex = index;
+        const levelData = LEVELS[index];
+        const numTargets = levelData.targets.length;
+        this.targetsRemaining = numTargets;
+
+        const container = document.querySelector('#targets-container');
+        if (container) {
+          const children = container.children;
+          for (let i = 0; i < children.length; i++) {
+            if (i < numTargets) {
+              const comp = children[i].components['gong-target'];
+              if (comp) comp.setupTarget(levelData.targets[i], i);
+            } else {
+              children[i].setAttribute('visible', 'false');
+            }
+          }
+        }
+
+        const statusStr = `LEVEL ${levelData.level} / ${this.totalLevels}: ${levelData.name}`;
+        const subStr = `ZIELE: ${this.targetsRemaining} / ${numTargets} • ${levelData.description}`;
+        this.update3DBoard(statusStr, this.totalElapsedTime.toFixed(2) + 's', subStr);
+        this.updateHUD(`${levelData.level} / ${this.totalLevels}`, this.totalElapsedTime.toFixed(2) + 's', `${this.targetsRemaining} / ${numTargets}`, levelData.name);
+      },
+
+      tick: function () {
+        if (this.state === 'RUNNING' || this.state === 'LEVEL_TRANSITION') {
+          this.totalElapsedTime = (performance.now() - this.matchStartTime) / 1000;
+          const formatted = this.totalElapsedTime.toFixed(2) + 's';
+          if (this.boardTimerText) this.boardTimerText.setAttribute('value', formatted);
+          if (this.uiTimer) this.uiTimer.textContent = formatted;
+        }
+      },
+
+      targetHit: function (id, distance) {
+        if (this.state !== 'RUNNING') return;
+
+        this.targetsRemaining = Math.max(0, this.targetsRemaining - 1);
+        const levelData = LEVELS[this.currentLevelIndex];
+        const totalInLevel = levelData.targets.length;
+
+        if (this.uiTargets) this.uiTargets.textContent = `${this.targetsRemaining} / ${totalInLevel}`;
+        if (this.boardSubText) this.boardSubText.setAttribute('value', `NOCH ${this.targetsRemaining} ZIEL(E) • ${levelData.name}`);
+
+        const feedback = document.getElementById('hit-feedback');
+        if (feedback) {
+          const distTag = distance ? `<span class="dist-tag">${distance}m Treffer!</span>` : '';
+          feedback.innerHTML = `★ TREFFER! ★${distTag}`;
+          feedback.classList.add('show');
+          setTimeout(() => feedback.classList.remove('show'), 650);
+        }
+
+        if (this.targetsRemaining === 0) {
+          this.onLevelCompleted();
+        }
+      },
+
+      onLevelCompleted: function () {
+        const levelData = LEVELS[this.currentLevelIndex];
+
+        if (this.currentLevelIndex < this.totalLevels - 1) {
+          this.state = 'LEVEL_TRANSITION';
+          window.soundFX.playLevelComplete();
+
+          const nextLevelNum = this.currentLevelIndex + 2;
+          this.update3DBoard(`★ LEVEL ${levelData.level} GEMEISTERT! ★`, this.totalElapsedTime.toFixed(2) + 's', `NÄCHSTES LEVEL ${nextLevelNum}/10 STARTET IN 1.5S...`);
+
+          const feedback = document.getElementById('hit-feedback');
+          if (feedback) {
+            feedback.innerHTML = `★ LEVEL ${levelData.level} GEMEISTERT! ★<span class="dist-tag">Bereite dich vor...</span>`;
+            feedback.classList.add('show');
+          }
+
+          setTimeout(() => {
+            if (feedback) feedback.classList.remove('show');
+            this.loadLevel(this.currentLevelIndex + 1);
+            this.state = 'RUNNING';
+            window.soundFX.playBuzzer(true);
+          }, 1500);
+
+        } else {
+          this.finishCampaign();
+        }
+      },
+
+      finishCampaign: function () {
+        this.state = 'FINISHED';
+        const finalTime = this.totalElapsedTime.toFixed(2);
+        window.soundFX.playVictory();
+
+        this.update3DBoard(
+          '★ KAMPAGNE BEENDET! ★',
+          `ZEIT: ${finalTime}s`,
+          `ALLE 10 LEVELS GEMEISTERT! • REKORD: ${finalTime}s`
+        );
+        this.updateHUD('10 / 10', `${finalTime}s`, '0 / 8 (FERTIG)', 'KAMPAGNE BEENDET!');
+
+        const feedback = document.getElementById('hit-feedback');
+        if (feedback) {
+          feedback.innerHTML = `🏆 MEISTER-SCHÜTZE! 🏆<span class="dist-tag">Alle 10 Levels in ${finalTime}s geschafft!</span>`;
+          feedback.classList.add('show');
+          setTimeout(() => feedback.classList.remove('show'), 3500);
+        }
+      },
+
+      restart: function () {
+        this.startCampaignCountdown();
+      },
+
+      update3DBoard: function (status, timer, sub) {
+        if (this.boardStatusText) this.boardStatusText.setAttribute('value', status);
+        if (this.boardTimerText) this.boardTimerText.setAttribute('value', timer);
+        if (this.boardSubText) this.boardSubText.setAttribute('value', sub);
+      },
+
+      updateHUD: function (level, timer, targets, mission) {
+        if (this.uiLevel) this.uiLevel.textContent = level;
+        if (this.uiTimer) this.uiTimer.textContent = timer;
+        if (this.uiTargets) this.uiTargets.textContent = targets;
+        if (this.uiMission) this.uiMission.textContent = mission;
+      }
+    });
+  </script>
+</head>
+
+<body>
+  <div id="hud-overlay">
+    <div class="top-bar">
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <div class="badge-card">
+          <div class="badge-title">Level</div>
+          <div class="badge-value" style="color: #ffd88a;" id="ui-level">1 / 10</div>
+        </div>
+        <div class="badge-card">
+          <div class="badge-title">Gesamtzeit</div>
+          <div class="badge-value" id="ui-timer">00.00s</div>
+        </div>
+        <div class="badge-card">
+          <div class="badge-title">Ziele</div>
+          <div class="badge-value" id="ui-targets">3 / 3</div>
+        </div>
+        <div class="badge-card" style="min-width: 170px;">
+          <div class="badge-title">Mission</div>
+          <div class="badge-value" style="font-size: 15px; color: #a5e688; margin-top: 3px;" id="ui-mission">Tutorial: Erste Schritte</div>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="western-btn" onclick="restartGame()">🔄 Neustart</button>
+        <button class="western-btn" id="btn-mute" onclick="toggleMute()">🔊 Ton</button>
+        <button class="western-btn" onclick="openCodeModal()">📋 HTML Code</button>
+      </div>
+    </div>
+
+    <div id="crosshair"><div class="center-circle"></div></div>
+    <div id="hit-feedback">★ TREFFER! ★</div>
+
+    <div class="bottom-bar">
+      <div class="instructions-card">
+        🎯 <b>Western-Kampagne (10 Levels):</b> 
+        <b>Desktop:</b> Maus zum Zielen (auch 360° im Kreis) &amp; Linksklick zum Feuern. | 
+        <b>VR (Meta Quest):</b> Richte den Revolver auf die Gongs &amp; drücke den Trigger.
+      </div>
+    </div>
+  </div>
+
+  <div id="code-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Eigenständiger HTML-Code (Single-File)</h3>
+        <button class="modal-close" onclick="closeCodeModal()">&times;</button>
+      </div>
+      <div class="code-box" id="code-display"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="western-btn" onclick="copySourceCode()">In die Zwischenablage kopieren</button>
+        <button class="western-btn" style="background: #443;" onclick="closeCodeModal()">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <a-scene
+    western-game-manager
+    renderer="antialias: true; colorManagement: true; foveationLevel: 2;"
+    vr-mode-ui="enabled: true"
+    device-orientation-permission-ui="enabled: true"
+    cursor="rayOrigin: mouse"
+    raycaster="objects: .shootable">
+
+    <a-sky color="#5ea8de"></a-sky>
+    <a-entity light="type: directional; color: #fff3d6; intensity: 1.25; castShadow: true" position="15 25 10"></a-entity>
+    <a-entity light="type: ambient; color: #ffebd2; intensity: 0.65"></a-entity>
+
+    <a-plane rotation="-90 0 0" width="220" height="220" color="#d49f5b" material="roughness: 0.95" position="0 0 0"></a-plane>
+    <a-cone position="-40 8 -70" radius-bottom="45" radius-top="2" height="24" color="#ba7e44"></a-cone>
+    <a-cone position="15 11 -85" radius-bottom="60" radius-top="5" height="30" color="#a86d38"></a-cone>
+    <a-cone position="70 9 -65" radius-bottom="40" radius-top="1" height="22" color="#c2884d"></a-cone>
+    <a-cone position="-20 10 75" radius-bottom="50" radius-top="4" height="26" color="#ad743e"></a-cone>
+    <a-cone position="45 8 70" radius-bottom="42" radius-top="2" height="22" color="#ba7e44"></a-cone>
+
+    <a-entity id="shooting-bench" position="0 0 -1.1">
+      <a-box position="0 0.85 0" width="2.4" height="0.1" depth="0.6" color="#5a381b"></a-box>
+      <a-box position="-1.05 0.42 0" width="0.1" height="0.85" depth="0.5" color="#422913"></a-box>
+      <a-box position="1.05 0.42 0" width="0.1" height="0.85" depth="0.5" color="#422913"></a-box>
+    </a-entity>
+
+    <!-- DYNAMISCHER CONTAINER FÜR DIE 10 LEVEL ZIELE -->
+    <a-entity id="targets-container"></a-entity>
+
+    <!-- 360° DEKO (Zäune, Fässer, Kakteen) -->
+    <a-cylinder position="-2.2 0 -2.4" radius="0.38" height="0.95" color="#633e1c"></a-cylinder>
+    <a-cylinder position="2.4 0 -2.6" radius="0.38" height="0.95" color="#633e1c"></a-cylinder>
+    <a-box position="-6 0.8 -4" rotation="0 25 0" width="3.5" height="0.12" depth="0.08" color="#5c3c1e"></a-box>
+    <a-box position="6 0.8 -4" rotation="0 25 0" width="3.5" height="0.12" depth="0.08" color="#5c3c1e"></a-box>
+    <a-box position="-6 0.8 6" rotation="0 155 0" width="3.5" height="0.12" depth="0.08" color="#5c3c1e"></a-box>
+    <a-box position="6 0.8 6" rotation="0 -155 0" width="3.5" height="0.12" depth="0.08" color="#5c3c1e"></a-box>
+    <a-cylinder position="-7 2.4 -15" radius="0.24" height="4.8" color="#2d5e2e"></a-cylinder>
+    <a-cylinder position="8 2.5 -16" radius="0.25" height="5.0" color="#2b592c"></a-cylinder>
+    <a-cylinder position="-11 2.25 14" radius="0.24" height="4.5" color="#285629"></a-cylinder>
+    <a-cylinder position="10 2.1 15" radius="0.22" height="4.2" color="#2a582b"></a-cylinder>
+
+    <a-entity id="rig" position="0 0 0">
+      <a-camera id="camera" position="0 1.6 0" look-controls wasd-controls="acceleration: 15">
+        <a-entity id="camera-cursor" cursor="rayOrigin: mouse" raycaster="objects: .shootable; far: 50" position="0 0 -1"></a-entity>
+
+        <!-- SCHWEBENDES TRANSLUZENTES HUD SCOREBOARD -->
+        <a-entity
+          id="hover-scoreboard"
+          position="0 0.44 -1.2"
+          rotation="9 0 0"
+          animation__float="property: position; from: 0 0.43 -1.2; to: 0 0.45 -1.2; dur: 2200; dir: alternate; loop: true; easing: easeInOutSine">
+
+          <a-box position="0 0 0" width="1.22" height="0.42" depth="0.015" color="#140c05" material="opacity: 0.38; transparent: true"></a-box>
+          <a-box position="0 0 0.003" width="1.25" height="0.45" depth="0.008" color="#d49b52" material="opacity: 0.42; transparent: true"></a-box>
+          <a-text id="board-status-text" value="LEVEL 1 / 10: Tutorial: Erste Schritte" align="center" position="0 0.12 0.015" width="2.3" color="#ffd07a"></a-text>
+          <a-text id="board-timer-text" value="00.00s" align="center" position="0 -0.015 0.015" width="3.5" color="#ffffff"></a-text>
+          <a-text id="board-sub-text" value="ZIELE: 3 / 3 • 3 Ziele nebeneinander" align="center" position="0 -0.135 0.015" width="1.9" color="#9ce675"></a-text>
+        </a-entity>
+
+        <!-- Desktop Gun -->
+        <a-entity id="desktop-gun" western-gun-controller="isVRController: false" position="0.25 -0.25 -0.55" rotation="0 -5 0">
+          <a-entity class="gun-mesh">
+            <a-cylinder position="0 0.05 -0.16" rotation="90 0 0" radius="0.016" height="0.26" color="#282828" material="metalness: 0.9"></a-cylinder>
+            <a-cylinder position="0 0.04 -0.02" rotation="90 0 0" radius="0.03" height="0.08" color="#3a3a3a"></a-cylinder>
+            <a-box position="0 -0.05 0.04" rotation="28 0 0" width="0.032" height="0.11" depth="0.05" color="#7a3f1d"></a-box>
+          </a-entity>
+          <a-sphere class="muzzle-flash" position="0 0.05 -0.32" radius="0.06" color="#ffcc00" visible="false"></a-sphere>
+        </a-entity>
+      </a-camera>
+
+      <!-- VR Controller Rechts -->
+      <a-entity
+        id="right-hand"
+        laser-controls="hand: right"
+        oculus-touch-controls="hand: right"
+        raycaster="objects: .shootable; showLine: true; lineColor: #ffaa00; far: 50"
+        western-gun-controller="isVRController: true">
+        <a-entity class="gun-mesh" position="0 -0.02 -0.1" rotation="-15 0 0">
+          <a-cylinder position="0 0.05 -0.16" rotation="90 0 0" radius="0.016" height="0.26" color="#282828" material="metalness: 0.9"></a-cylinder>
+          <a-box position="0 -0.05 0.04" rotation="28 0 0" width="0.032" height="0.11" depth="0.05" color="#7a3f1d"></a-box>
+        </a-entity>
+        <a-sphere class="muzzle-flash" position="0 0.03 -0.36" radius="0.08" color="#ffcc00" visible="false"></a-sphere>
+      </a-entity>
+      <a-entity id="left-hand" oculus-touch-controls="hand: left"></a-entity>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    const sceneEl = document.querySelector('a-scene');
+    if (sceneEl) {
+      sceneEl.addEventListener('enter-vr', () => {
+        document.querySelector('#desktop-gun').setAttribute('visible', 'false');
+        document.getElementById('crosshair').style.display = 'none';
+      });
+      sceneEl.addEventListener('exit-vr', () => {
+        document.querySelector('#desktop-gun').setAttribute('visible', 'true');
+        document.getElementById('crosshair').style.display = 'block';
+      });
+    }
+
+    function restartGame() {
+      window.soundFX.init();
+      const gameManager = document.querySelector('[western-game-manager]');
+      if (gameManager) gameManager.components['western-game-manager'].restart();
+    }
+
+    function toggleMute() {
+      const isMuted = window.soundFX.toggleMute();
+      document.getElementById('btn-mute').textContent = isMuted ? '🔇 Stumm' : '🔊 Ton';
+    }
+
+    function openCodeModal() {
+      document.getElementById('code-display').textContent = document.documentElement.outerHTML;
+      document.getElementById('code-modal').classList.add('active');
+    }
+
+    function closeCodeModal() {
+      document.getElementById('code-modal').classList.remove('active');
+    }
+
+    function copySourceCode() {
+      navigator.clipboard.writeText(document.documentElement.outerHTML).then(() => {
+        alert('Vollständiger HTML-Code erfolgreich in die Zwischenablage kopiert!');
+      });
+    }
+  </script>
+</body>
+</html>
